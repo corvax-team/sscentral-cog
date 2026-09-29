@@ -1,0 +1,11 @@
+{
+	"author": ["corvax-team"],
+	"name": "SSCentral",
+	"short": "SS Central API and management commands for an SS13 server",
+	"description": "Serves the HTTP API that BandaStation based SS13 servers expect from SS Central and manages Discord links, whitelist and donate tiers from Discord",
+	"install_msg": "Set the SSCENTRAL_* environment variables before loading, see README",
+	"min_bot_version": "3.5.0",
+	"end_user_data_statement": "Stores the link between a BYOND ckey and a Discord user ID, plus whitelist, donate tier and ban records for that ckey",
+	"tags": ["ss13", "byond"],
+	"type": "COG"
+}
