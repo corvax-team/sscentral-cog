@@ -38,3 +38,4 @@ All under `[p]central`, for Red admins. Tier changes are owner only.
 | `tier clear <ckey>` | remove the tier |
 | `tier list` | active tiers |
 | `bans <ckey>` | bans reported by the game |
+| `reannounce <id or all>` | post stored bans to the bans channel again |

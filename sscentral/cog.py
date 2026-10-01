@@ -163,6 +163,19 @@ class SSCentral(commands.Cog):
         lines = [_ban_line(e) for e in entries[-15:]]
         await ctx.send(_listing(f"Баны {ckey}", lines))
 
+    @central.command()
+    async def reannounce(self, ctx, ban_id: str):
+        """Повторно отправить бан в канал банов, id бана или all"""
+        entries = await self.store.bans()
+        if ban_id != "all":
+            entries = [e for e in entries if str(e["id"]) == ban_id]
+        if not entries:
+            await ctx.send("Бан не найден")
+            return
+        for entry in entries:
+            await self.announce_ban(entry)
+        await ctx.send(f"Отправлено: {len(entries)}")
+
     async def announce_ban(self, ban):
         channel = self.bot.get_channel(self.settings.bans_channel_id)
         if not channel:
