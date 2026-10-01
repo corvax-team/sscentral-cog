@@ -241,9 +241,10 @@ def _ban_embed(ban, show_admin):
     lines = [f"**Нарушитель**: `{ban['player_ckey']}`"]
     if show_admin:
         lines.append(f"**Администратор**: `{ban['admin_ckey']}`")
-    lines += ["", f"**Выдан**: {issued}"]
-    if not permanent:
-        lines.append(f"**Истекает**: {_moscow(ban['expiration_time'])} ({_hours_text(hours)})")
+    if permanent:
+        lines += ["", f"**Выдан**: {issued}"]
+    else:
+        lines += ["", f"**Выдан**: {issued} по {_moscow(ban['expiration_time'])}", f"**Длительность**: {_hours_text(hours)}"]
     if job:
         lines.append(f"**Роли**: {job.replace(',', ', ')}")
     lines += ["", f"**Причина**: {(ban.get('reason') or 'не указана')[:1500]}"]
@@ -273,9 +274,18 @@ def _moscow(iso):
 def _hours_text(hours):
     hours = float(hours)
     if hours < 24:
-        return f"{hours:g} ч."
-    days = hours / 24
-    return f"{days:g} дн."
+        return _plural(round(hours), "час", "часа", "часов")
+    return _plural(round(hours / 24), "день", "дня", "дней")
+
+
+def _plural(n, one, few, many):
+    if n % 10 == 1 and n % 100 != 11:
+        word = one
+    elif 2 <= n % 10 <= 4 and not 12 <= n % 100 <= 14:
+        word = few
+    else:
+        word = many
+    return f"{n} {word}"
 
 
 def _ban_line(entry):
