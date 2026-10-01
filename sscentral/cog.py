@@ -1,8 +1,8 @@
+import logging
 import os
 from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 from typing import Optional, Union
-
-import logging
 
 import aiohttp
 import discord
@@ -227,25 +227,47 @@ def _listing(title, lines):
 
 
 def _ban_embed(ban, show_admin):
-    permanent = ban.get("duration_hours") is None
+    hours = ban.get("duration_hours")
+    permanent = hours is None
     job = ban.get("job")
     if job:
-        kind, color = "Джоббан", 0x3498DB
+        kind = "Джоббан"
     elif permanent:
-        kind, color = "Перманентный", 0xE74C3C
+        kind = "Перманентный бан"
     else:
-        kind, color = "Временный", 0xE67E22
-    embed = discord.Embed(title=f"Бан: {ban['player_ckey']}", color=color)
-    embed.add_field(name="Тип", value=kind)
-    embed.add_field(name="Срок", value="навсегда" if permanent else _hours_text(ban["duration_hours"]))
-    if job:
-        embed.add_field(name="Роли", value=job.replace(",", ", "), inline=False)
-    embed.add_field(name="Причина", value=(ban.get("reason") or "не указана")[:1000], inline=False)
+        kind = "Временный бан"
+    issued = _moscow(ban["issue_time"])
+
+    lines = [f"**Нарушитель**: `{ban['player_ckey']}`"]
     if show_admin:
-        embed.add_field(name="Админ", value=ban["admin_ckey"])
+        lines.append(f"**Администратор**: `{ban['admin_ckey']}`")
+    lines += ["", f"**Выдан**: {issued}"]
+    if not permanent:
+        lines.append(f"**Истекает**: {_moscow(ban['expiration_time'])} ({_hours_text(hours)})")
+    if job:
+        lines.append(f"**Роли**: {job.replace(',', ', ')}")
+    lines += ["", f"**Причина**: {(ban.get('reason') or 'не указана')[:1500]}"]
     if ban.get("round_id"):
-        embed.add_field(name="Раунд", value=str(ban["round_id"]))
-    return embed
+        lines.append(f"**Раунд**: {ban['round_id']}")
+
+    return discord.Embed(title=f"{kind} #{ban['id']}", description="\n".join(lines), color=_ban_color(job, hours))
+
+
+def _ban_color(job, hours):
+    if job:
+        return 0x3498DB
+    if hours is None:
+        return 0x992D22
+    if float(hours) >= 24 * 30:
+        return 0xE74C3C
+    if float(hours) >= 24 * 7:
+        return 0xE67E22
+    return 0xF1C40F
+
+
+def _moscow(iso):
+    moment = datetime.fromisoformat(iso).astimezone(timezone(timedelta(hours=3)))
+    return moment.strftime("%d.%m.%Y %H:%M")
 
 
 def _hours_text(hours):
