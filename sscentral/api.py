@@ -17,11 +17,12 @@ LOGIN_TOKEN_TTL = 600
 
 
 class Api:
-    def __init__(self, bot, store, settings, session):
+    def __init__(self, bot, store, settings, session, on_ban=None):
         self.bot = bot
         self.store = store
         self.settings = settings
         self.session = session
+        self.on_ban = on_ban
         self.login_tokens = {}
 
     def build_app(self):
@@ -100,6 +101,8 @@ class Api:
         body["player_ckey"] = canonical_ckey(body["player_ckey"])
         body["admin_ckey"] = canonical_ckey(body["admin_ckey"])
         entry = await self.store.add_ban(body)
+        if self.on_ban:
+            await self.on_ban(entry)
         return web.json_response(entry, status=201)
 
     async def oauth_token(self, request):

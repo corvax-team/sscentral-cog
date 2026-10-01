@@ -2,6 +2,8 @@ import os
 from dataclasses import dataclass
 from typing import Optional, Union
 
+import logging
+
 import aiohttp
 import discord
 from aiohttp import web
@@ -9,6 +11,8 @@ from redbot.core import commands
 
 from .api import Api
 from .store import LinkConflict, Store, canonical_ckey
+
+log = logging.getLogger("red.sscentral")
 
 
 @dataclass
@@ -20,6 +24,8 @@ class Settings:
     guild_id: int
     server_type: str
     port: int
+    bans_channel_id: int
+    bans_show_admin: bool
 
     @property
     def redirect_uri(self):
@@ -35,6 +41,8 @@ class Settings:
             guild_id=int(_required("SSCENTRAL_GUILD_ID")),
             server_type=os.environ.get("SSCENTRAL_SERVER_TYPE", "default"),
             port=int(os.environ.get("SSCENTRAL_PORT", "8440")),
+            bans_channel_id=int(os.environ.get("SSCENTRAL_BANS_CHANNEL", "0")),
+            bans_show_admin=os.environ.get("SSCENTRAL_BANS_SHOW_ADMIN", "false").lower() == "true",
         )
 
 
@@ -48,7 +56,7 @@ class SSCentral(commands.Cog):
 
     async def cog_load(self):
         self.session = aiohttp.ClientSession()
-        api = Api(self.bot, self.store, self.settings, self.session)
+        api = Api(self.bot, self.store, self.settings, self.session, self.announce_ban)
         self.runner = web.AppRunner(api.build_app())
         await self.runner.setup()
         await web.TCPSite(self.runner, "0.0.0.0", self.settings.port).start()
@@ -155,6 +163,15 @@ class SSCentral(commands.Cog):
         lines = [_ban_line(e) for e in entries[-15:]]
         await ctx.send(_listing(f"Баны {ckey}", lines))
 
+    async def announce_ban(self, ban):
+        channel = self.bot.get_channel(self.settings.bans_channel_id)
+        if not channel:
+            return
+        try:
+            await channel.send(embed=_ban_embed(ban, self.settings.bans_show_admin))
+        except discord.HTTPException as error:
+            log.warning("ban announce failed: %s", error)
+
     async def _find_player(self, target):
         if isinstance(target, discord.Member):
             return await self.store.player_by_discord(target.id)
@@ -194,6 +211,36 @@ def _listing(title, lines):
         return f"{title}: пусто"
     body = "\n".join(lines)
     return f"{title} ({len(lines)}):\n```\n{body[:1800]}\n```"
+
+
+def _ban_embed(ban, show_admin):
+    permanent = ban.get("duration_hours") is None
+    job = ban.get("job")
+    if job:
+        kind, color = "Джоббан", 0x3498DB
+    elif permanent:
+        kind, color = "Перманентный", 0xE74C3C
+    else:
+        kind, color = "Временный", 0xE67E22
+    embed = discord.Embed(title=f"Бан: {ban['player_ckey']}", color=color)
+    embed.add_field(name="Тип", value=kind)
+    embed.add_field(name="Срок", value="навсегда" if permanent else _hours_text(ban["duration_hours"]))
+    if job:
+        embed.add_field(name="Роли", value=job.replace(",", ", "), inline=False)
+    embed.add_field(name="Причина", value=(ban.get("reason") or "не указана")[:1000], inline=False)
+    if show_admin:
+        embed.add_field(name="Админ", value=ban["admin_ckey"])
+    if ban.get("round_id"):
+        embed.add_field(name="Раунд", value=str(ban["round_id"]))
+    return embed
+
+
+def _hours_text(hours):
+    hours = float(hours)
+    if hours < 24:
+        return f"{hours:g} ч."
+    days = hours / 24
+    return f"{days:g} дн."
 
 
 def _ban_line(entry):

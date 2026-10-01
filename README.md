@@ -15,6 +15,8 @@ Read from the environment when the cog loads.
 | `SSCENTRAL_GUILD_ID` | Discord server that players are added to after linking |
 | `SSCENTRAL_SERVER_TYPE` | same value as `SERVER_TYPE` in the game config |
 | `SSCENTRAL_PORT` | listen port, default `8440` |
+| `SSCENTRAL_BANS_CHANNEL` | channel that gets an embed for every ban the game reports, off when unset |
+| `SSCENTRAL_BANS_SHOW_ADMIN` | `true` to include the admin's ckey in that embed |
 
 Add `<SSCENTRAL_PUBLIC_URL>/oauth/callback` as a redirect in the Discord application. The bot needs the Create Invite permission to add players to the server.
 
