@@ -52,13 +52,14 @@ class StatusCard(commands.Cog):
     @commands.command()
     async def status(self, ctx):
         """Состояние сервера"""
-        await ctx.send(embed=await self._build_embed())
+        embed, _ = await self._build_embed()
+        await ctx.send(embed=embed)
 
     @tasks.loop(seconds=UPDATE_SECONDS)
     async def refresh(self):
-        embed = await self._build_embed()
+        embed, players = await self._build_embed()
         await self._update_card(embed)
-        await self._update_presence(embed)
+        await self._update_presence(players)
 
     @refresh.before_loop
     async def _wait_ready(self):
@@ -72,7 +73,7 @@ class StatusCard(commands.Cog):
         if not data:
             embed = discord.Embed(title=self.settings.name, color=0x95A5A6)
             embed.add_field(name="Состояние", value="Сервер недоступен или перезапускается", inline=False)
-            return self._with_addresses(embed)
+            return self._with_addresses(embed), None
 
         players = int(data.get("players", 0))
         embed = discord.Embed(title=self.settings.name, color=0x2ECC71)
@@ -82,8 +83,7 @@ class StatusCard(commands.Cog):
         embed.add_field(name="Уровень", value=_security(data.get("security_level")))
         embed.add_field(name="Шаттл", value=_shuttle(data.get("shuttle_mode"), data.get("shuttle_timer")))
         embed.add_field(name="Админы онлайн", value=data.get("admins", "0"))
-        embed.players = players
-        return self._with_addresses(embed)
+        return self._with_addresses(embed), players
 
     def _with_addresses(self, embed):
         if self.settings.addresses:
@@ -117,8 +117,7 @@ class StatusCard(commands.Cog):
         except discord.HTTPException:
             return None
 
-    async def _update_presence(self, embed):
-        players = getattr(embed, "players", None)
+    async def _update_presence(self, players):
         text = f"{_plural(players, 'игрок', 'игрока', 'игроков')} на {self.settings.name}" if players is not None else "сервер недоступен"
         try:
             await self.bot.change_presence(activity=discord.Game(name=text))
