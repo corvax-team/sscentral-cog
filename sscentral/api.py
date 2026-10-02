@@ -17,12 +17,13 @@ LOGIN_TOKEN_TTL = 600
 
 
 class Api:
-    def __init__(self, bot, store, settings, session, on_ban=None):
+    def __init__(self, bot, store, settings, session, on_ban=None, on_ticket_event=None):
         self.bot = bot
         self.store = store
         self.settings = settings
         self.session = session
         self.on_ban = on_ban
+        self.on_ticket_event = on_ticket_event
         self.login_tokens = {}
 
     def build_app(self):
@@ -38,6 +39,7 @@ class Api:
                 web.post("/whitelist_bans", self.add_whitelist_ban),
                 web.get("/donates", self.donates),
                 web.post("/bans", self.add_ban),
+                web.post("/tickets/events", self.ticket_event),
                 web.post("/oauth/token", self.oauth_token),
                 web.get("/oauth/login", self.oauth_login),
                 web.get("/oauth/callback", self.oauth_callback),
@@ -105,6 +107,12 @@ class Api:
             await self.on_ban(entry)
         return web.json_response(entry, status=201)
 
+    async def ticket_event(self, request):
+        event = await request.json()
+        if self.on_ticket_event:
+            await self.on_ticket_event(event)
+        return web.Response(status=204)
+
     async def oauth_token(self, request):
         ckey = canonical_ckey(request.query.get("ckey", ""))
         if not ckey:
@@ -125,7 +133,14 @@ class Api:
             "scope": "identify guilds.join",
             "state": token,
         }
-        raise web.HTTPFound(f"{DISCORD_AUTHORIZE}?{urlencode(params)}")
+        authorize_url = f"{DISCORD_AUTHORIZE}?{urlencode(params)}"
+        return _html(
+            200,
+            "Привязка Discord",
+            "Сейчас откроется страница входа Discord.<br>"
+            "Если Discord у вас не открывается без VPN, <b>включите VPN</b> и только потом нажимайте кнопку.",
+            button=("Перейти к авторизации", authorize_url),
+        )
 
     async def oauth_callback(self, request):
         ckey = self._ckey_for(request.query.get("state", ""))
@@ -226,13 +241,20 @@ def _error(status, detail):
     return web.json_response({"detail": detail}, status=status)
 
 
-def _html(status, title, text):
+def _html(status, title, text, button=None):
+    action = ""
+    if button:
+        label, href = button
+        action = f"<p><a class='btn' href='{escape(href, quote=True)}'>{label}</a></p>"
     page = (
         "<!DOCTYPE html><html><head><meta charset='utf-8'>"
+        "<meta name='viewport' content='width=device-width, initial-scale=1'>"
         f"<title>{title}</title>"
         "<style>body{background:#111;color:#ddd;font-family:sans-serif;"
         "display:flex;align-items:center;justify-content:center;height:100vh;margin:0}"
-        "div{text-align:center}h1{font-size:1.6em}</style></head>"
-        f"<body><div><h1>{title}</h1><p>{text}</p></div></body></html>"
+        "div{text-align:center;max-width:36em;padding:1em;line-height:1.5}h1{font-size:1.6em}"
+        ".btn{display:inline-block;margin-top:1em;padding:.8em 1.6em;background:#5865F2;color:#fff;"
+        "border-radius:.5em;text-decoration:none;font-weight:bold}</style></head>"
+        f"<body><div><h1>{title}</h1><p>{text}</p>{action}</div></body></html>"
     )
     return web.Response(status=status, text=page, content_type="text/html")

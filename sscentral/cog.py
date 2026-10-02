@@ -11,6 +11,7 @@ from redbot.core import commands
 
 from .api import Api
 from .store import LinkConflict, Store, canonical_ckey
+from .tickets import TicketRelay
 
 log = logging.getLogger("red.sscentral")
 
@@ -26,6 +27,7 @@ class Settings:
     port: int
     bans_channel_id: int
     bans_show_admin: bool
+    tickets_channel_id: int
 
     @property
     def redirect_uri(self):
@@ -43,6 +45,7 @@ class Settings:
             port=int(os.environ.get("SSCENTRAL_PORT", "8440")),
             bans_channel_id=int(os.environ.get("SSCENTRAL_BANS_CHANNEL", "0")),
             bans_show_admin=os.environ.get("SSCENTRAL_BANS_SHOW_ADMIN", "false").lower() == "true",
+            tickets_channel_id=int(os.environ.get("SSCENTRAL_TICKETS_CHANNEL", "0")),
         )
 
 
@@ -51,12 +54,13 @@ class SSCentral(commands.Cog):
         self.bot = bot
         self.settings = Settings.from_env()
         self.store = Store(self)
+        self.tickets = TicketRelay(bot, self.settings.tickets_channel_id)
         self.session = None
         self.runner = None
 
     async def cog_load(self):
         self.session = aiohttp.ClientSession()
-        api = Api(self.bot, self.store, self.settings, self.session, self.announce_ban)
+        api = Api(self.bot, self.store, self.settings, self.session, self.announce_ban, self.tickets.handle)
         self.runner = web.AppRunner(api.build_app())
         await self.runner.setup()
         await web.TCPSite(self.runner, "0.0.0.0", self.settings.port).start()

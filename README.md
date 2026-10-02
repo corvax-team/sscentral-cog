@@ -17,6 +17,7 @@ Read from the environment when the cog loads.
 | `SSCENTRAL_PORT` | listen port, default `8440` |
 | `SSCENTRAL_BANS_CHANNEL` | channel that gets an embed for every ban the game reports, off when unset |
 | `SSCENTRAL_BANS_SHOW_ADMIN` | `true` to include the admin's ckey in that embed |
+| `SSCENTRAL_TICKETS_CHANNEL` | channel that gets one embed per ahelp ticket, edited as messages and admin actions come in, off when unset |
 
 Add `<SSCENTRAL_PUBLIC_URL>/oauth/callback` as a redirect in the Discord application. The bot needs the Create Invite permission to add players to the server.
 
