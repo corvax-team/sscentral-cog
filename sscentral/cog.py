@@ -10,6 +10,7 @@ from aiohttp import web
 from redbot.core import commands
 
 from .api import Api
+from .gamedb import GameDb
 from .store import LinkConflict, Store, canonical_ckey
 from .tickets import TicketRelay
 
@@ -55,6 +56,7 @@ class SSCentral(commands.Cog):
         self.settings = Settings.from_env()
         self.store = Store(self)
         self.tickets = TicketRelay(bot, self.settings.tickets_channel_id)
+        self.gamedb = GameDb()
         self.session = None
         self.runner = None
 
@@ -64,12 +66,14 @@ class SSCentral(commands.Cog):
         self.runner = web.AppRunner(api.build_app())
         await self.runner.setup()
         await web.TCPSite(self.runner, "0.0.0.0", self.settings.port).start()
+        await self.gamedb.connect()
 
     async def cog_unload(self):
         if self.runner:
             await self.runner.cleanup()
         if self.session:
             await self.session.close()
+        await self.gamedb.close()
 
     @commands.group()
     @commands.guild_only()
@@ -166,6 +170,75 @@ class SSCentral(commands.Cog):
         entries = await self.store.bans(ckey)
         lines = [_ban_line(e) for e in entries[-15:]]
         await ctx.send(_listing(f"Баны {ckey}", lines))
+
+    @central.command()
+    async def notes(self, ctx, ckey: str):
+        """Заметки администрации об игроке"""
+        if not await self._gamedb_ready(ctx):
+            return
+        ckey = canonical_ckey(ckey)
+        notes = await self.gamedb.notes(ckey)
+        if not notes:
+            await ctx.send(f"У `{ckey}` нет заметок")
+            return
+        embed = discord.Embed(title=f"Заметки: {ckey}", color=0x9B59B6)
+        for note in notes:
+            when = note["timestamp"].strftime("%d.%m.%Y %H:%M")
+            flags = f" [{_severity(note['severity'])}]" if note["severity"] and note["severity"] != "none" else ""
+            secret = " (скрытая)" if note["secret"] else ""
+            embed.add_field(name=f"{when} {note['adminckey']}{flags}{secret}", value=note["text"][:1000], inline=False)
+        embed.set_footer(text=f"Последние {len(notes)}")
+        await ctx.send(embed=embed)
+
+    @central.command()
+    async def player(self, ctx, ckey: str):
+        """Сводка по игроку из базы сервера"""
+        if not await self._gamedb_ready(ctx):
+            return
+        ckey = canonical_ckey(ckey)
+        info = await self.gamedb.player(ckey)
+        if not info:
+            await ctx.send(f"`{ckey}` ни разу не заходил на сервер")
+            return
+        counts = await self.gamedb.counts(ckey)
+        playtime = await self.gamedb.playtime(ckey)
+        living = sum(r["minutes"] for r in playtime if r["job"] == "Living")
+        top = ", ".join(f"{r['job']} {r['minutes'] // 60} ч" for r in playtime if r["job"] not in ("Living", "Ghost"))[:300]
+        link = await self.store.player_by_ckey(ckey)
+        embed = discord.Embed(title=f"Игрок: {ckey}", color=0x3498DB)
+        embed.add_field(name="BYOND", value=info["byond_key"] or ckey)
+        embed.add_field(name="Discord", value=f"<@{link['discord_id']}>" if link else "не привязан")
+        embed.add_field(name="Аккаунт создан", value=str(info["accountjoindate"] or "?"))
+        embed.add_field(name="Первый вход", value=f"{info['firstseen']:%d.%m.%Y} (раунд {info['firstseen_round_id']})")
+        embed.add_field(name="Последний вход", value=f"{info['lastseen']:%d.%m.%Y} (раунд {info['lastseen_round_id']})")
+        embed.add_field(name="Наиграно", value=f"{living // 60} ч")
+        embed.add_field(name="Заметки", value=str(counts["notes"]))
+        embed.add_field(name="Баны", value=f"{counts['active_bans']} активных, {counts['total_bans']} всего")
+        if top:
+            embed.add_field(name="Роли", value=top, inline=False)
+        await ctx.send(embed=embed, allowed_mentions=discord.AllowedMentions.none())
+
+    @central.command()
+    async def alts(self, ctx, ckey: str):
+        """Другие ckey с тех же подключений"""
+        if not await self._gamedb_ready(ctx):
+            return
+        ckey = canonical_ckey(ckey)
+        rows = await self.gamedb.alts(ckey)
+        if not rows:
+            await ctx.send(f"Совпадений по подключениям для `{ckey}` нет")
+            return
+        lines = []
+        for row in rows:
+            how = " и ".join(x for x, ok in (("IP", row["same_ip"]), ("CID", row["same_cid"])) if ok)
+            lines.append(f"{row['ckey']}: {how}, последний раз {row['last_seen']:%d.%m.%Y}")
+        await ctx.send(_listing(f"Возможные альты {ckey}", lines))
+
+    async def _gamedb_ready(self, ctx):
+        if self.gamedb.pool:
+            return True
+        await ctx.send("База сервера не подключена")
+        return False
 
     @central.command()
     async def reannounce(self, ctx, ban_id: str):
@@ -280,6 +353,10 @@ def _hours_text(hours):
     if hours < 24:
         return _plural(round(hours), "час", "часа", "часов")
     return _plural(round(hours / 24), "день", "дня", "дней")
+
+
+def _severity(value):
+    return {"high": "серьёзная", "medium": "средняя", "minor": "мелкая"}.get(value, value)
 
 
 def _plural(n, one, few, many):

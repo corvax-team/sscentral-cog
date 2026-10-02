@@ -15,6 +15,7 @@ Read from the environment when the cog loads.
 | `SSCENTRAL_GUILD_ID` | Discord server that players are added to after linking |
 | `SSCENTRAL_SERVER_TYPE` | same value as `SERVER_TYPE` in the game config |
 | `SSCENTRAL_PORT` | listen port, default `8440` |
+| `SSCENTRAL_DB_HOST`, `SSCENTRAL_DB_PORT`, `SSCENTRAL_DB_NAME`, `SSCENTRAL_DB_USER`, `SSCENTRAL_DB_PASSWORD` | read-only access to the game database for notes, player and alts, optional |
 | `SSCENTRAL_BANS_CHANNEL` | channel that gets an embed for every ban the game reports, off when unset |
 | `SSCENTRAL_BANS_SHOW_ADMIN` | `true` to include the admin's ckey in that embed |
 | `SSCENTRAL_TICKETS_CHANNEL` | channel that gets one embed per ahelp ticket, edited as messages and admin actions come in, off when unset |
@@ -39,6 +40,9 @@ All under `[p]central`, for Red admins. Tier changes are owner only.
 | `tier clear <ckey>` | remove the tier |
 | `tier list` | active tiers |
 | `bans <ckey>` | bans reported by the game |
+| `notes <ckey>` | admin notes from the game database |
+| `player <ckey>` | first and last seen, playtime, note and ban counts |
+| `alts <ckey>` | other ckeys seen from the same IP or computer id, without showing either |
 | `reannounce <id or all>` | post stored bans to the bans channel again |
 
 ## ss13status
