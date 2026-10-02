@@ -40,3 +40,14 @@ All under `[p]central`, for Red admins. Tier changes are owner only.
 | `tier list` | active tiers |
 | `bans <ckey>` | bans reported by the game |
 | `reannounce <id or all>` | post stored bans to the bans channel again |
+
+## ss13status
+
+A second cog in this repo: keeps one message in a channel updated with the round state (players, map, round, alert level, shuttle, admins) and mirrors the player count in the bot presence. `[p]status` shows the same card on demand.
+
+| Variable | Meaning |
+|---|---|
+| `SS13STATUS_HOST`, `SS13STATUS_PORT` | where the game's status port is reached, default `127.0.0.1:1337` |
+| `SS13STATUS_CHANNEL` | channel for the card |
+| `SS13STATUS_NAME` | server name shown as the card title |
+| `SS13STATUS_ADDRESSES` | connection lines shown under the card, separated by `;` |

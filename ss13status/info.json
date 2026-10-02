@@ -1,0 +1,11 @@
+{
+	"author": ["corvax-team"],
+	"name": "SS13Status",
+	"short": "Live status card of an SS13 server in a channel",
+	"description": "Keeps one message in a channel updated with the round state of a BYOND SS13 server and mirrors the player count in the bot presence",
+	"install_msg": "Set the SS13STATUS_* environment variables before loading, see README",
+	"min_bot_version": "3.5.0",
+	"end_user_data_statement": "Stores no end user data",
+	"tags": ["ss13", "byond"],
+	"type": "COG"
+}
