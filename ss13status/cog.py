@@ -35,7 +35,7 @@ class Settings:
         )
 
 
-class SS13Status(commands.Cog):
+class StatusCard(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.settings = Settings.from_env()

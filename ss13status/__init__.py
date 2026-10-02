@@ -1,5 +1,5 @@
-from .cog import SS13Status
+from .cog import StatusCard
 
 
 async def setup(bot):
-    await bot.add_cog(SS13Status(bot))
+    await bot.add_cog(StatusCard(bot))
