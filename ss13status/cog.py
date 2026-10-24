@@ -1,4 +1,5 @@
 import asyncio
+import json
 import logging
 import os
 from dataclasses import dataclass
@@ -16,23 +17,39 @@ UPDATE_SECONDS = 60
 
 
 @dataclass
+class Server:
+    name: str
+    port: int
+    addresses: list
+
+
+@dataclass
 class Settings:
     host: str
-    port: int
     channel_id: int
-    name: str
-    addresses: list
+    servers: list
 
     @classmethod
     def from_env(cls):
-        raw = os.environ.get("SS13STATUS_ADDRESSES", "")
         return cls(
             host=os.environ.get("SS13STATUS_HOST", "127.0.0.1"),
-            port=int(os.environ.get("SS13STATUS_PORT", "1337")),
             channel_id=int(os.environ.get("SS13STATUS_CHANNEL", "0")),
-            name=os.environ.get("SS13STATUS_NAME", "SS13"),
-            addresses=[a.strip() for a in raw.split(";") if a.strip()],
+            servers=_servers_from_env(),
         )
+
+
+def _servers_from_env():
+    raw = os.environ.get("SS13STATUS_SERVERS", "")
+    if raw:
+        return [Server(s["name"], int(s["port"]), s.get("addresses", [])) for s in json.loads(raw)]
+    addresses = os.environ.get("SS13STATUS_ADDRESSES", "")
+    return [
+        Server(
+            os.environ.get("SS13STATUS_NAME", "SS13"),
+            int(os.environ.get("SS13STATUS_PORT", "1337")),
+            [a.strip() for a in addresses.split(";") if a.strip()],
+        )
+    ]
 
 
 class StatusCard(commands.Cog):
@@ -40,8 +57,8 @@ class StatusCard(commands.Cog):
         self.bot = bot
         self.settings = Settings.from_env()
         self.config = Config.get_conf(self, identifier=CONFIG_ID, force_registration=True)
-        self.config.register_global(message_id=0)
-        self.message = None
+        self.config.register_global(message_id=0, message_ids={})
+        self.messages = {}
 
     async def cog_load(self):
         self.refresh.start()
@@ -51,65 +68,71 @@ class StatusCard(commands.Cog):
 
     @commands.command()
     async def status(self, ctx):
-        """Состояние сервера"""
-        embed, _ = await self._build_embed()
-        await ctx.send(embed=embed)
+        """Состояние серверов"""
+        for server in self.settings.servers:
+            embed, _ = await self._build_embed(server)
+            await ctx.send(embed=embed)
 
     @tasks.loop(seconds=UPDATE_SECONDS)
     async def refresh(self):
-        embed, players = await self._build_embed()
-        await self._update_card(embed)
-        await self._update_presence(players)
+        online = []
+        for server in self.settings.servers:
+            embed, players = await self._build_embed(server)
+            await self._update_card(server, embed)
+            if players is not None:
+                online.append((server.name, players))
+        await self._update_presence(online)
 
     @refresh.before_loop
     async def _wait_ready(self):
         await self.bot.wait_until_red_ready()
 
-    async def _build_embed(self):
+    async def _build_embed(self, server):
         try:
-            data = await topic(self.settings.host, self.settings.port, "?status")
+            data = await topic(self.settings.host, server.port, "?status")
         except (OSError, asyncio.TimeoutError):
             data = None
         if not data:
-            embed = discord.Embed(title=self.settings.name, color=0x95A5A6)
+            embed = discord.Embed(title=server.name, color=0x95A5A6)
             embed.add_field(name="Состояние", value="Сервер недоступен или перезапускается", inline=False)
-            return self._with_addresses(embed), None
+            return _with_addresses(embed, server), None
 
         players = int(data.get("players", 0))
-        embed = discord.Embed(title=self.settings.name, color=0x2ECC71)
+        embed = discord.Embed(title=server.name, color=0x2ECC71)
         embed.add_field(name="Онлайн", value=_plural(players, "игрок", "игрока", "игроков"))
         embed.add_field(name="Карта", value=data.get("map_name", "?"))
         embed.add_field(name="Раунд", value=_round_text(data))
         embed.add_field(name="Уровень", value=_security(data.get("security_level")))
         embed.add_field(name="Шаттл", value=_shuttle(data.get("shuttle_mode"), data.get("shuttle_timer")))
         embed.add_field(name="Админы онлайн", value=data.get("admins", "0"))
-        return self._with_addresses(embed), players
+        return _with_addresses(embed, server), players
 
-    def _with_addresses(self, embed):
-        if self.settings.addresses:
-            embed.add_field(name="Подключение", value="\n".join(self.settings.addresses), inline=False)
-        embed.set_footer(text="Обновляется раз в минуту")
-        return embed
-
-    async def _update_card(self, embed):
+    async def _update_card(self, server, embed):
         channel = self.bot.get_channel(self.settings.channel_id)
         if not channel:
             return
-        if self.message is None:
-            self.message = await self._find_card(channel)
+        if server.name not in self.messages:
+            self.messages[server.name] = await self._find_card(channel, server)
+        message = self.messages[server.name]
         try:
-            if self.message:
-                await self.message.edit(embed=embed)
+            if message:
+                await message.edit(embed=embed)
             else:
-                self.message = await channel.send(embed=embed)
-                await self.config.message_id.set(self.message.id)
+                message = await channel.send(embed=embed)
+                self.messages[server.name] = message
+                async with self.config.message_ids() as ids:
+                    ids[server.name] = message.id
         except discord.NotFound:
-            self.message = None
+            del self.messages[server.name]
         except discord.HTTPException as error:
-            log.warning("status card update failed: %s", error)
+            log.warning("status card update for %s failed: %s", server.name, error)
 
-    async def _find_card(self, channel):
-        message_id = await self.config.message_id()
+    async def _find_card(self, channel, server):
+        ids = await self.config.message_ids()
+        message_id = ids.get(server.name)
+        # the single-server card predates per-server ids, adopt it for the first server
+        if not message_id and server is self.settings.servers[0]:
+            message_id = await self.config.message_id()
         if not message_id:
             return None
         try:
@@ -117,12 +140,22 @@ class StatusCard(commands.Cog):
         except discord.HTTPException:
             return None
 
-    async def _update_presence(self, players):
-        text = f"{_plural(players, 'игрок', 'игрока', 'игроков')} на {self.settings.name}" if players is not None else "сервер недоступен"
+    async def _update_presence(self, online):
+        if online:
+            text = ", ".join(f"{_plural(players, 'игрок', 'игрока', 'игроков')} на {name}" for name, players in online)
+        else:
+            text = "серверы недоступны"
         try:
             await self.bot.change_presence(activity=discord.Game(name=text))
         except discord.HTTPException:
             pass
+
+
+def _with_addresses(embed, server):
+    if server.addresses:
+        embed.add_field(name="Подключение", value="\n".join(server.addresses), inline=False)
+    embed.set_footer(text="Обновляется раз в минуту")
+    return embed
 
 
 def _round_text(data):
