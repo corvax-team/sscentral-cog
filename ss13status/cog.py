@@ -21,6 +21,7 @@ class Server:
     name: str
     port: int
     addresses: list
+    hidden: list
 
 
 @dataclass
@@ -41,13 +42,14 @@ class Settings:
 def _servers_from_env():
     raw = os.environ.get("SS13STATUS_SERVERS", "")
     if raw:
-        return [Server(s["name"], int(s["port"]), s.get("addresses", [])) for s in json.loads(raw)]
+        return [Server(s["name"], int(s["port"]), s.get("addresses", []), s.get("hide", [])) for s in json.loads(raw)]
     addresses = os.environ.get("SS13STATUS_ADDRESSES", "")
     return [
         Server(
             os.environ.get("SS13STATUS_NAME", "SS13"),
             int(os.environ.get("SS13STATUS_PORT", "1337")),
             [a.strip() for a in addresses.split(";") if a.strip()],
+            [],
         )
     ]
 
@@ -102,8 +104,10 @@ class StatusCard(commands.Cog):
         embed.add_field(name="Онлайн", value=_plural(players, "игрок", "игрока", "игроков"))
         embed.add_field(name="Карта", value=data.get("map_name", "?"))
         embed.add_field(name="Раунд", value=_round_text(data))
-        embed.add_field(name="Уровень", value=_security(data.get("security_level")))
-        embed.add_field(name="Шаттл", value=_shuttle(data.get("shuttle_mode"), data.get("shuttle_timer")))
+        if "security" not in server.hidden:
+            embed.add_field(name="Уровень", value=_security(data.get("security_level")))
+        if "shuttle" not in server.hidden:
+            embed.add_field(name="Шаттл", value=_shuttle(data.get("shuttle_mode"), data.get("shuttle_timer")))
         embed.add_field(name="Админы онлайн", value=data.get("admins", "0"))
         return _with_addresses(embed, server), players
 
