@@ -75,7 +75,8 @@ class SSCentral(commands.Cog):
         await self.gamedb.connect()
         if self.gamedb.pool:
             for feed in self.settings.db_feeds:
-                relay = DbFeed(self.gamedb, feed["server"], feed["database"], self.announce_ban, self.tickets.handle)
+                on_ticket = self.tickets.handle if feed.get("tickets", True) else None
+                relay = DbFeed(self.gamedb, feed["server"], feed["database"], self.announce_ban, on_ticket)
                 self.feed_tasks.append(asyncio.create_task(relay.run()))
 
     async def cog_unload(self):

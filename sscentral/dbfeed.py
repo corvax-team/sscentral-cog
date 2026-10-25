@@ -8,12 +8,15 @@ log = logging.getLogger("red.sscentral.dbfeed")
 POLL_SECONDS = 10
 PLAYER_MESSAGES = ("Ticket Opened", "Reply")
 TAG_RE = re.compile(r"<[^>]+>")
+# Highway's DB user can't read ip/cid columns
+BAN_COLUMNS = "id, bantime, round_id, role, expiration_time, ckey, a_ckey, reason"
+TICKET_COLUMNS = "id, ticket, action, message, recipient, sender, round_id, urgent"
 
 
 class DbFeed:
     """Relays bans and ahelps from a game that only writes them to its own database"""
 
-    def __init__(self, gamedb, server, database, on_ban, on_ticket_event):
+    def __init__(self, gamedb, server, database, on_ban, on_ticket_event=None):
         if not re.fullmatch(r"\w+", database):
             raise ValueError(f"bad database name {database!r}")
         self.gamedb = gamedb
@@ -27,7 +30,8 @@ class DbFeed:
 
     async def run(self):
         self.last_ban = await self._max_id("ban")
-        self.last_ticket = await self._max_id("ticket")
+        if self.on_ticket_event:
+            self.last_ticket = await self._max_id("ticket")
         while True:
             await asyncio.sleep(POLL_SECONDS)
             try:
@@ -38,13 +42,15 @@ class DbFeed:
                 log.exception("%s feed failed", self.server)
 
     async def poll(self):
-        bans = await self._rows_after("ban", self.last_ban)
+        bans = await self._rows_after("ban", BAN_COLUMNS, self.last_ban)
         if bans:
             self.last_ban = bans[-1]["id"]
         for ban in _group_bans(bans):
             await self.on_ban({**ban, "server": self.server})
 
-        for row in await self._rows_after("ticket", self.last_ticket):
+        if not self.on_ticket_event:
+            return
+        for row in await self._rows_after("ticket", TICKET_COLUMNS, self.last_ticket):
             self.last_ticket = row["id"]
             event = self._ticket_event(row)
             if event:
@@ -86,9 +92,9 @@ class DbFeed:
         rows = await self.gamedb._rows(f"SELECT COALESCE(MAX(id), 0) AS id FROM `{self.database}`.`{table}`", ())
         return rows[0]["id"]
 
-    async def _rows_after(self, table, last_id):
+    async def _rows_after(self, table, columns, last_id):
         return await self.gamedb._rows(
-            f"SELECT * FROM `{self.database}`.`{table}` WHERE id > %s ORDER BY id LIMIT 200", (last_id,)
+            f"SELECT {columns} FROM `{self.database}`.`{table}` WHERE id > %s ORDER BY id LIMIT 200", (last_id,)
         )
 
 
