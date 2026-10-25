@@ -94,7 +94,7 @@ def _update_state(ticket, event):
     ticket.admins_online = event.get("admins_online", 0)
     ticket.urgent = ticket.urgent or bool(event.get("urgent"))
     action = event["action"]
-    if action in ("Closed", "Resolved"):
+    if action in ("Closed", "Resolved", "Rejected", "IC Issue"):
         ticket.closed = True
     elif action in ("Opened", "Reopened"):
         ticket.closed = False
@@ -110,7 +110,7 @@ def _line(event, player):
         # a PM ticket also reports the admin's first message as a Reply
         if event.get("ticket_type") == "Private Message":
             return None
-        icon = ":inbox_tray:" if event.get("admins_online") else ":sos:"
+        icon = ":sos:" if event.get("admins_online") == 0 else ":inbox_tray:"
         return f"{icon} {stamp}**{sender}:** {text}"
     if action == "Reply":
         icon = ":inbox_tray:" if canonical_ckey(event.get("sender") or "") == player else ":outbox_tray:"
@@ -127,6 +127,9 @@ def _line(event, player):
         "Unassigned": (":wave:", f"{sender} отказался от тикета"),
         "Disconnected": (":electric_plug:", f"{sender} отключился"),
         "Reconnected": (":electric_plug:", f"{sender} подключился"),
+        "Rejected": (":no_entry_sign:", f"{sender} отклонил тикет"),
+        "IC Issue": (":performing_arts:", f"{sender} пометил тикет как IC"),
+        "Interaction": (":information_source:", text),
     }
     icon, note = notes.get(action, (":grey_question:", f"{action}: {text}"))
     return f"{icon} {stamp}_{note}_"
@@ -146,4 +149,4 @@ def _color(ticket):
         return COLOR_CLOSED
     if ticket.urgent:
         return COLOR_URGENT
-    return COLOR_ANSWERED if ticket.admins_online else COLOR_NO_ADMINS
+    return COLOR_NO_ADMINS if ticket.admins_online == 0 else COLOR_ANSWERED

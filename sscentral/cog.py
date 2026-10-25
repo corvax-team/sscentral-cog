@@ -1,3 +1,5 @@
+import asyncio
+import json
 import logging
 import os
 from dataclasses import dataclass
@@ -10,6 +12,7 @@ from aiohttp import web
 from redbot.core import commands
 
 from .api import Api
+from .dbfeed import DbFeed
 from .gamedb import GameDb
 from .store import LinkConflict, Store, canonical_ckey
 from .tickets import TicketRelay
@@ -29,6 +32,7 @@ class Settings:
     bans_channel_id: int
     bans_show_admin: bool
     tickets_channel_id: int
+    db_feeds: list
 
     @property
     def redirect_uri(self):
@@ -47,6 +51,7 @@ class Settings:
             bans_channel_id=int(os.environ.get("SSCENTRAL_BANS_CHANNEL", "0")),
             bans_show_admin=os.environ.get("SSCENTRAL_BANS_SHOW_ADMIN", "false").lower() == "true",
             tickets_channel_id=int(os.environ.get("SSCENTRAL_TICKETS_CHANNEL", "0")),
+            db_feeds=json.loads(os.environ.get("SSCENTRAL_DB_FEEDS") or "[]"),
         )
 
 
@@ -59,6 +64,7 @@ class SSCentral(commands.Cog):
         self.gamedb = GameDb()
         self.session = None
         self.runner = None
+        self.feed_tasks = []
 
     async def cog_load(self):
         self.session = aiohttp.ClientSession()
@@ -67,8 +73,14 @@ class SSCentral(commands.Cog):
         await self.runner.setup()
         await web.TCPSite(self.runner, "0.0.0.0", self.settings.port).start()
         await self.gamedb.connect()
+        if self.gamedb.pool:
+            for feed in self.settings.db_feeds:
+                relay = DbFeed(self.gamedb, feed["server"], feed["database"], self.announce_ban, self.tickets.handle)
+                self.feed_tasks.append(asyncio.create_task(relay.run()))
 
     async def cog_unload(self):
+        for task in self.feed_tasks:
+            task.cancel()
         if self.runner:
             await self.runner.cleanup()
         if self.session:
@@ -328,7 +340,10 @@ def _ban_embed(ban, show_admin):
     if ban.get("round_id"):
         lines.append(f"**Раунд**: {ban['round_id']}")
 
-    return discord.Embed(title=f"{kind} #{ban['id']}", description="\n".join(lines), color=_ban_color(job, hours))
+    embed = discord.Embed(title=f"{kind} #{ban['id']}", description="\n".join(lines), color=_ban_color(job, hours))
+    if ban.get("server"):
+        embed.set_footer(text=ban["server"])
+    return embed
 
 
 def _ban_color(job, hours):
