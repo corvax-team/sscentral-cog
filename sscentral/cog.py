@@ -216,7 +216,7 @@ class SSCentral(commands.Cog):
         counts = await self.gamedb.counts(ckey)
         playtime = await self.gamedb.playtime(ckey)
         living = sum(r["minutes"] for r in playtime if r["job"] == "Living")
-        top = ", ".join(f"{r['job']} {r['minutes'] // 60} ч" for r in playtime if r["job"] not in ("Living", "Ghost"))[:300]
+        roles = _roles_block(playtime)
         link = await self.store.player_by_ckey(ckey)
         embed = discord.Embed(title=f"Игрок: {ckey}", color=0x3498DB)
         embed.add_field(name="BYOND", value=info["byond_key"] or ckey)
@@ -227,8 +227,8 @@ class SSCentral(commands.Cog):
         embed.add_field(name="Наиграно", value=f"{living // 60} ч")
         embed.add_field(name="Заметки", value=str(counts["notes"]))
         embed.add_field(name="Баны", value=f"{counts['active_bans']} активных, {counts['total_bans']} всего")
-        if top:
-            embed.add_field(name="Роли", value=top, inline=False)
+        if roles:
+            embed.add_field(name="Роли", value=roles, inline=False)
         await ctx.send(embed=embed, allowed_mentions=discord.AllowedMentions.none())
 
     @central.command()
@@ -383,6 +383,15 @@ def _plural(n, one, few, many):
     else:
         word = many
     return f"{n} {word}"
+
+
+def _roles_block(playtime, limit=12):
+    rows = [r for r in playtime if r["job"] not in ("Living", "Ghost") and r["minutes"] > 0][:limit]
+    if not rows:
+        return None
+    width = max(len(r["job"]) for r in rows)
+    lines = [f"{r['job']:<{width}}  {r['minutes'] // 60:>3} ч {r['minutes'] % 60:>2} мин" for r in rows]
+    return "```\n" + "\n".join(lines) + "\n```"
 
 
 def _ban_line(entry):
